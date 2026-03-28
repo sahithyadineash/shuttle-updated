@@ -1,87 +1,194 @@
 import { useState } from "react"
 import { useNavigate } from "react-router-dom"
-import { FaEye, FaEyeSlash } from "react-icons/fa"
 
-const Login = () => {
+function Login() {
   const navigate = useNavigate()
 
-  const [username, setUsername] = useState("")
-  const [password, setPassword] = useState("")
-  const [error, setError] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [showPassword, setShowPassword] = useState(false)
+  const [isRegister, setIsRegister] = useState(true)
 
-  const handleLogin = () => {
-    if (username.trim() === "" || password.trim() === "") {
-      setError("Both fields are required")
-      return
+  const [form, setForm] = useState({
+    name: "",
+    email: "",
+    password: "",
+    phone: "",
+    role: "student",
+  })
+
+  const handleChange = (e: any) => {
+    setForm({ ...form, [e.target.name]: e.target.value })
+  }
+
+  const handleSubmit = async () => {
+    try {
+      const url = isRegister
+        ? "http://localhost:5001/api/auth/register"
+        : "http://localhost:5001/api/auth/login"
+
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(form),
+      })
+
+      const data = await res.json()
+
+      if (res.ok) {
+        if (!isRegister) {
+          localStorage.setItem("token", data.token)
+          navigate("/dashboard")
+        } else {
+          alert("Registered! Please login.")
+          setIsRegister(false)
+        }
+      } else {
+        alert(data.message || "Error")
+      }
+    } catch (err) {
+      console.error(err)
     }
-
-    setError("")
-    setLoading(true)
-
-    // Simulate API delay
-    setTimeout(() => {
-      localStorage.setItem("studentName", username)
-      setLoading(false)
-      navigate("/dashboard")
-    }, 1000)
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-primary">
-      <div className="bg-white p-8 rounded-xl shadow-lg w-96">
-        <h2 className="text-2xl font-bold mb-6 text-center text-primary">
-          Shuttle Login
-        </h2>
+    <div style={styles.container}>
+      <div style={styles.card}>
+        <div style={styles.logo}>🚐</div>
 
-        {/* Username */}
-        <input
-          type="text"
-          placeholder="Enter your name"
-          value={username}
-          onChange={(e) => setUsername(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-          className="w-full mb-4 p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
-        />
+        <h2>{isRegister ? "Create Account" : "Login"}</h2>
+        <p style={{ color: "#666" }}>
+          {isRegister ? "Join ShuttleTrack today" : "Welcome back"}
+        </p>
 
-        {/* Password with eye icon */}
-        <div className="relative mb-4">
+        {isRegister && (
           <input
-            type={showPassword ? "text" : "password"}
-            placeholder="Enter your password"
-            value={password}
-            onChange={(e) => setPassword(e.target.value)}
-            onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-            className="w-full p-3 border rounded-lg focus:outline-none focus:ring-2 focus:ring-primary"
+            name="name"
+            placeholder="Full Name"
+            style={styles.input}
+            onChange={handleChange}
           />
-
-          <span
-            onClick={() => setShowPassword(!showPassword)}
-            className="absolute right-3 top-3 cursor-pointer text-gray-500"
-          >
-            {showPassword ? <FaEyeSlash /> : <FaEye />}
-          </span>
-        </div>
-
-        {/* Error */}
-        {error && (
-          <p className="text-red-500 text-sm mb-4 text-center">
-            {error}
-          </p>
         )}
 
-        {/* Login Button */}
-        <button
-          onClick={handleLogin}
-          disabled={loading}
-          className="w-full bg-accent text-white py-3 rounded-lg hover:opacity-90 transition duration-300"
-        >
-          {loading ? "Logging in..." : "Login"}
+        <input
+          name="email"
+          placeholder="Email"
+          style={styles.input}
+          onChange={handleChange}
+        />
+
+        <input
+          type="password"
+          name="password"
+          placeholder="Password"
+          style={styles.input}
+          onChange={handleChange}
+        />
+
+        {isRegister && (
+          <>
+            <input
+              name="phone"
+              placeholder="Phone Number"
+              style={styles.input}
+              onChange={handleChange}
+            />
+
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                style={
+                  form.role === "student"
+                    ? styles.roleActive
+                    : styles.roleBtn
+                }
+                onClick={() => setForm({ ...form, role: "student" })}
+              >
+                Student
+              </button>
+
+              <button
+                style={
+                  form.role === "driver"
+                    ? styles.roleActive
+                    : styles.roleBtn
+                }
+                onClick={() => setForm({ ...form, role: "driver" })}
+              >
+                Driver
+              </button>
+            </div>
+          </>
+        )}
+
+        <button style={styles.mainBtn} onClick={handleSubmit}>
+          {isRegister ? "Create Account" : "Login"}
         </button>
+
+        <p style={{ marginTop: "10px" }}>
+          {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
+          <span
+            style={{ color: "#0f766e", cursor: "pointer" }}
+            onClick={() => setIsRegister(!isRegister)}
+          >
+            {isRegister ? "Sign In" : "Register"}
+          </span>
+        </p>
       </div>
     </div>
   )
 }
 
 export default Login
+
+// 🎨 STYLES
+const styles: any = {
+  container: {
+    height: "100vh",
+    display: "flex",
+    justifyContent: "center",
+    alignItems: "center",
+    background: "#f1f5f9",
+  },
+  card: {
+    width: "350px",
+    padding: "25px",
+    borderRadius: "10px",
+    background: "white",
+    boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
+    textAlign: "center",
+  },
+  logo: {
+    fontSize: "40px",
+    marginBottom: "10px",
+  },
+  input: {
+    width: "100%",
+    padding: "10px",
+    margin: "8px 0",
+    borderRadius: "6px",
+    border: "1px solid #ccc",
+  },
+  mainBtn: {
+    width: "100%",
+    padding: "12px",
+    marginTop: "10px",
+    background: "#0f766e",
+    color: "white",
+    border: "none",
+    borderRadius: "6px",
+    cursor: "pointer",
+  },
+  roleBtn: {
+    flex: 1,
+    padding: "10px",
+    border: "1px solid #ccc",
+    borderRadius: "6px",
+    background: "white",
+    cursor: "pointer",
+  },
+  roleActive: {
+    flex: 1,
+    padding: "10px",
+    borderRadius: "6px",
+    background: "#0f766e",
+    color: "white",
+    border: "none",
+  },
+}

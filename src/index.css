@@ -2,6 +2,12 @@
 @tailwind components;
 @tailwind utilities;
 
+html, body, #root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+}
+
 body {
-  @apply bg-secondary text-dark;
+  @apply bg-gray-100 text-gray-800;
 }
