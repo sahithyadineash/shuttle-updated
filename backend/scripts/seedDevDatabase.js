@@ -1,6 +1,6 @@
 /**
  * Full local dev seed for an empty MongoDB (e.g. first time in Compass).
- * Creates: VIT Campus Loop route, demo driver + student, 2 active shuttles.
+ * Creates: VIT Campus Loop route, demo driver + student, sh1–sh4 on VIT only.
  *
  * Run from backend/:  npm run seed:dev
  *
@@ -13,6 +13,7 @@ const bcrypt = require('bcryptjs');
 const Route = require('../models/Route');
 const User = require('../models/user');
 const Shuttle = require('../models/Shuttle');
+const pruneStrayCampusData = require('./pruneStrayCampusData');
 
 const STOPS = [
   { name: 'SJT (Silver Jubilee Tower)', lat: 12.969856, lng: 79.158529, order: 1 },
@@ -34,12 +35,7 @@ async function run() {
   console.log('  (hostname only — not printing full URI)\n');
   await mongoose.connect(uri);
 
-  const removedLegacy = await Shuttle.deleteMany({
-    shuttle_number: { $regex: /^sh1$/i },
-  });
-  if (removedLegacy.deletedCount > 0) {
-    console.log('✓ Removed legacy shuttle(s) sh1:', removedLegacy.deletedCount);
-  }
+  await pruneStrayCampusData();
 
   let route = await Route.findOne({ route_name: 'VIT Campus Loop' });
   if (!route) {
@@ -81,42 +77,59 @@ async function run() {
     console.log('• Student already exists', student._id.toString());
   }
 
-  const shuttleSpecs = [
-    {
-      shuttle_number: 'VIT-01',
-      current_location: { lat: 12.969856, lng: 79.158529 },
-    },
-    {
-      shuttle_number: 'VIT-02',
-      current_location: { lat: 12.970873, lng: 79.159744 },
-    },
-  ];
+  /** VIT only: SJT, TT, Main Gate, Main Library. */
+  function placementsForVitRoute(routeDoc) {
+    const stops = [...routeDoc.stops].sort((a, b) => a.order - b.order);
+    if (stops.length < 7) return [];
+    const pick = (order) =>
+      stops.find((x) => x.order === order) ?? stops[order - 1];
+    return [pick(1), pick(2), pick(7), pick(6)].filter(Boolean);
+  }
 
   const createdShuttles = [];
-  for (const spec of shuttleSpecs) {
-    let s = await Shuttle.findOne({ shuttle_number: spec.shuttle_number });
+  let seq = 1;
+
+  await Shuttle.deleteMany({ shuttle_number: { $in: ['VIT-01', 'VIT-02'] } });
+
+  const placements = placementsForVitRoute(route);
+  if (placements.length === 0) {
+    console.log(
+      '⚠ VIT Campus Loop needs ≥7 stops for sh1–sh4; shuttle list unchanged (except VIT-01/02 cleanup).'
+    );
+  }
+  for (const stop of placements) {
+    const shuttle_number = `sh${seq++}`;
+    const current_location = { lat: stop.lat, lng: stop.lng };
+    let s = await Shuttle.findOne({ shuttle_number });
     if (!s) {
       s = await Shuttle.create({
-        shuttle_number: spec.shuttle_number,
+        shuttle_number,
         route_id: route._id,
         driver_id: driver._id,
-        current_location: spec.current_location,
+        current_location,
         status: 'active',
         seat_status: 'available',
         seats_total: 40,
         seats_available: 40,
       });
-      console.log('✓ Created shuttle', spec.shuttle_number, s._id.toString());
+      console.log('✓ Created shuttle', shuttle_number, s._id.toString(), '→ VIT Campus Loop');
     } else {
       s.route_id = route._id;
       s.driver_id = driver._id;
       s.status = 'active';
       s.seat_status = 'available';
-      s.current_location = spec.current_location;
+      s.current_location = current_location;
       await s.save();
-      console.log('• Updated shuttle', spec.shuttle_number, s._id.toString());
+      console.log('• Updated shuttle', shuttle_number, s._id.toString(), '→ VIT Campus Loop');
     }
     createdShuttles.push(s);
+  }
+
+  if (createdShuttles.length > 0) {
+    await Shuttle.deleteMany({
+      shuttle_number: { $regex: /^sh\d+$/i },
+      _id: { $nin: createdShuttles.map((x) => x._id) },
+    });
   }
 
   await mongoose.disconnect();
@@ -130,9 +143,9 @@ async function run() {
   console.log('  Driver:  driver@demo.vit  /  ' + DEMO_PASSWORD);
   console.log('  Student: student@demo.vit /  ' + DEMO_PASSWORD + '\n');
 
-  console.log('--- GPS simulator ---');
-  console.log('  In backend/simulator/gpsSimulator.js set SHUTTLE_ID or env:');
-  console.log('  SHUTTLE_ID=' + createdShuttles[0]._id.toString());
+  console.log('--- GPS simulator (smooth movement for all sh* shuttles) ---');
+  console.log('  From backend/:  npm run simulate:gps');
+  console.log('  (needs server running; loads sh1, sh2, … from MongoDB)');
 }
 
 run().catch((e) => {
