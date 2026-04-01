@@ -77,3 +77,5 @@ server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🔌 Socket.io ready for real-time updates`);
 });
+const paymentRoutes = require('./routes/payment');
+app.use('/api/payments', paymentRoutes);

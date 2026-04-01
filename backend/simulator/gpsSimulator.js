@@ -8,16 +8,12 @@ const SHUTTLE_ID = '698b81dfe2a980ac0eec1f32';
 
 // Simulate route coordinates (Main Gate → Library → Hostel)
 const routeCoordinates = [
-  { lat: 13.0827, lng: 80.2707 }, // Main Gate
-  { lat: 13.0835, lng: 80.2720 },
-  { lat: 13.0840, lng: 80.2730 },
-  { lat: 13.0845, lng: 80.2740 },
-  { lat: 13.0850, lng: 80.2750 }, // Library
-  { lat: 13.0860, lng: 80.2760 },
-  { lat: 13.0870, lng: 80.2770 },
-  { lat: 13.0880, lng: 80.2780 },
-  { lat: 13.0890, lng: 80.2790 },
-  { lat: 13.0900, lng: 80.2800 }, // Hostel
+  { lat: 12.9692, lng: 79.1559 }, // Main Gate
+  { lat: 12.9716, lng: 79.1588 }, // SJT
+  { lat: 12.9723, lng: 79.1602 }, // Library
+  { lat: 12.9735, lng: 79.1598 }, // TT
+  { lat: 12.9755, lng: 79.1620 }, // Men's Hostel
+  { lat: 12.9742, lng: 79.1635 }, // Ladies Hostel
 ];
 
 let currentIndex = 0;

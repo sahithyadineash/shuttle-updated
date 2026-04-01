@@ -35,6 +35,7 @@ function Login() {
       if (res.ok) {
         if (!isRegister) {
           localStorage.setItem("token", data.token)
+          localStorage.setItem("user", JSON.stringify(data.user)) // ADD THIS
           navigate("/dashboard")
         } else {
           alert("Registered! Please login.")

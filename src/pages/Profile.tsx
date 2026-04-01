@@ -4,15 +4,11 @@ function Profile() {
   const [user, setUser] = useState<any>(null)
 
   useEffect(() => {
-    // 🔥 TEMP DATA (replace with backend later)
-    setUser({
-      name: "Sanjusree",
-      email: "sanju@gmail.com",
-      phone: "9876543210",
-      role: "Student",
-    })
-  }, [])
-
+  const userData = localStorage.getItem("user")
+  if (userData) {
+    setUser(JSON.parse(userData))
+  }
+}, [])
   if (!user) return <p style={{ padding: "20px" }}>Loading...</p>
 
   return (

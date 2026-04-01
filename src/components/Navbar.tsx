@@ -7,17 +7,13 @@ function Navbar() {
   const location = useLocation()
 
   const user = {
-    name: "Sanjusree",
+    name: localStorage.getItem("studentName") || "Sanjusree",
   }
 
   const handleLogout = () => {
     localStorage.removeItem("token")
+    localStorage.removeItem("studentName")
     navigate("/")
-  }
-
-  const goToProfile = () => {
-    setOpen(false)
-    navigate("/profile")
   }
 
   return (
@@ -29,13 +25,16 @@ function Navbar() {
         display: "flex",
         justifyContent: "space-between",
         alignItems: "center",
+        position: "relative",
+        zIndex: 9999, // ✅ FIXED
       }}
     >
       {/* LEFT SIDE */}
       <div style={{ display: "flex", alignItems: "center", gap: "15px" }}>
         
-        {/* 🔙 BACK BUTTON (only on profile page) */}
-        {location.pathname === "/profile" && (
+        {/* BACK BUTTON */}
+        {(location.pathname === "/profile" ||
+          location.pathname === "/history") && (
           <button
             onClick={() => navigate("/dashboard")}
             style={{
@@ -51,11 +50,32 @@ function Navbar() {
           </button>
         )}
 
-        <h2 style={{ margin: 0 }}>🚐 Shuttle Track</h2>
+        {/* TITLE */}
+        <h2
+          style={{ margin: 0, cursor: "pointer" }}
+          onClick={() => navigate("/dashboard")}
+        >
+          🚐 Shuttle Track
+        </h2>
+
+        {/* HISTORY BUTTON */}
+        <button
+          onClick={() => navigate("/history")}
+          style={{
+            background: "#334155",
+            color: "white",
+            border: "none",
+            padding: "6px 10px",
+            borderRadius: "6px",
+            cursor: "pointer",
+          }}
+        >
+          💳 History
+        </button>
       </div>
 
       {/* RIGHT SIDE */}
-      <div style={{ position: "relative" }}>
+      <div style={{ position: "relative", zIndex: 10001 }}>
         <div
           onClick={() => setOpen(!open)}
           style={{
@@ -66,6 +86,7 @@ function Navbar() {
           }}
         >
           <span>{user.name}</span>
+
           <div
             style={{
               width: "35px",
@@ -93,17 +114,34 @@ function Navbar() {
               borderRadius: "8px",
               boxShadow: "0 5px 15px rgba(0,0,0,0.2)",
               width: "150px",
+              zIndex: 10000, // ✅ FIXED
             }}
           >
-            <div style={itemStyle} onClick={goToProfile}>
-              Details
+            <div
+              style={itemStyle}
+              onClick={() => {
+                setOpen(false)
+                navigate("/profile")
+              }}
+            >
+              👤 Details
+            </div>
+
+            <div
+              style={itemStyle}
+              onClick={() => {
+                setOpen(false)
+                navigate("/history")
+              }}
+            >
+              💳 Payments
             </div>
 
             <div
               style={{ ...itemStyle, color: "red", borderBottom: "none" }}
               onClick={handleLogout}
             >
-              Logout
+              🚪 Logout
             </div>
           </div>
         )}
