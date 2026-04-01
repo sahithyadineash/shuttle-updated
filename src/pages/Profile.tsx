@@ -1,104 +1,48 @@
-import { useEffect, useState } from "react"
+import { useAuth } from "../hooks/useAuth"
 
-function Profile() {
-  const [user, setUser] = useState<any>(null)
+export default function Profile() {
+  const { user } = useAuth()
 
-  useEffect(() => {
-  const userData = localStorage.getItem("user")
-  if (userData) {
-    setUser(JSON.parse(userData))
+  if (!user) {
+    return (
+      <div className="flex min-h-[40vh] items-center justify-center p-6">
+        <p className="text-slate-600">Loading…</p>
+      </div>
+    )
   }
-}, [])
-  if (!user) return <p style={{ padding: "20px" }}>Loading...</p>
 
   return (
-    <div
-      style={{
-        minHeight: "100vh",
-        background: "#f1f5f9",
-        display: "flex",
-        justifyContent: "center",
-        alignItems: "center",
-        padding: "20px",
-      }}
-    >
-      <div
-        style={{
-          width: "400px",
-          background: "white",
-          borderRadius: "16px",
-          boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-          padding: "25px",
-          textAlign: "center",
-        }}
-      >
-        {/* 👤 Avatar */}
-        <div
-          style={{
-            width: "80px",
-            height: "80px",
-            borderRadius: "50%",
-            background: "#0f766e",
-            color: "white",
-            fontSize: "32px",
-            display: "flex",
-            justifyContent: "center",
-            alignItems: "center",
-            margin: "0 auto 15px",
-          }}
-        >
-          {user.name.charAt(0)}
+    <div className="flex min-h-full flex-1 items-center justify-center bg-slate-100 p-6">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-lg ring-1 ring-slate-200/80">
+        <div className="mx-auto mb-4 flex h-20 w-20 items-center justify-center rounded-full bg-teal-700 text-3xl font-semibold text-white">
+          {user.name.charAt(0).toUpperCase()}
         </div>
-
-        <h2 style={{ marginBottom: "5px" }}>{user.name}</h2>
-        <p style={{ color: "#64748b", marginBottom: "20px" }}>
+        <h1 className="text-center text-2xl font-semibold text-slate-900">
+          {user.name}
+        </h1>
+        <p className="mt-1 text-center text-sm capitalize text-slate-500">
           {user.role}
         </p>
 
-        {/* INFO SECTION */}
-        <div style={{ textAlign: "left" }}>
-          <ProfileItem label="Email" value={user.email} />
-          <ProfileItem label="Phone" value={user.phone} />
-        </div>
-
-        {/* BUTTON */}
-        <button
-          style={{
-            marginTop: "20px",
-            width: "100%",
-            padding: "12px",
-            background: "#0f766e",
-            color: "white",
-            border: "none",
-            borderRadius: "8px",
-            cursor: "pointer",
-            fontWeight: "bold",
-          }}
-        >
-          Edit Profile
-        </button>
+        <dl className="mt-8 space-y-3">
+          <ProfileRow label="Email" value={user.email} />
+          <ProfileRow
+            label="Phone"
+            value={user.phone?.trim() ? user.phone : "—"}
+          />
+        </dl>
       </div>
     </div>
   )
 }
 
-export default Profile
-
-// 🔹 Reusable Item Component
-function ProfileItem({ label, value }: any) {
+function ProfileRow({ label, value }: { label: string; value: string }) {
   return (
-    <div
-      style={{
-        marginBottom: "15px",
-        padding: "10px",
-        background: "#f8fafc",
-        borderRadius: "8px",
-      }}
-    >
-      <p style={{ margin: 0, fontSize: "12px", color: "#64748b" }}>
+    <div className="rounded-xl border border-slate-200 bg-slate-50 px-4 py-3">
+      <dt className="text-xs font-medium uppercase tracking-wide text-slate-500">
         {label}
-      </p>
-      <p style={{ margin: 0, fontWeight: "bold" }}>{value}</p>
+      </dt>
+      <dd className="mt-1 text-sm font-medium text-slate-900">{value}</dd>
     </div>
   )
 }

@@ -9,6 +9,12 @@ const shuttleSchema = new mongoose.Schema({
   },
   seats_total: { type: Number, required: true, default: 40 },
   seats_available: { type: Number, required: true, default: 40 },
+  /** Driver toggle: students see only Available vs Full (no headcount). */
+  seat_status: {
+    type: String,
+    enum: ['available', 'full'],
+    default: 'available',
+  },
   driver_id: { type: mongoose.Schema.Types.ObjectId, ref: 'User' },
   status: { type: String, enum: ['active', 'inactive'], default: 'inactive' }
 }, { timestamps: true });

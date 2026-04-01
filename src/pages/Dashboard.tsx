@@ -1,257 +1,346 @@
-import { useEffect, useMemo, useState } from "react"
-import { MapContainer, TileLayer, Marker, Popup } from "react-leaflet"
-import L from "leaflet"
-import { io } from "socket.io-client"
+import { useCallback, useEffect, useMemo, useState } from "react"
+import { useNavigate } from "react-router-dom"
+import { api } from "../lib/api"
+import { useSocket } from "../hooks/useSocket"
+import type { LocationUpdatedPayload, RouteDoc, ShuttleDoc } from "../types/models"
+import ShuttleMap from "../components/map/ShuttleMap"
+import { VIT_CAMPUS_CENTER } from "../config/constants"
+import { shuttleSeatLabel } from "../lib/shuttleDisplay"
+import { distanceKm, etaMinutes } from "../lib/geo"
+import { isAxiosError } from "axios"
 
-// Fix leaflet icons
-delete (L.Icon.Default.prototype as any)._getIconUrl
-L.Icon.Default.mergeOptions({
-  iconUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon.png",
-  iconRetinaUrl:
-    "https://unpkg.com/leaflet@1.9.3/dist/images/marker-icon-2x.png",
-  shadowUrl: "https://unpkg.com/leaflet@1.9.3/dist/images/marker-shadow.png",
-})
+function isRoutePopulated(
+  r: ShuttleDoc["route_id"]
+): r is RouteDoc {
+  return r !== null && typeof r === "object" && "_id" in r
+}
 
-function Dashboard() {
-  const [shuttles, setShuttles] = useState<any[]>([])
+export default function Dashboard() {
+  const navigate = useNavigate()
+  const { socket, connected } = useSocket()
+
+  const [routes, setRoutes] = useState<RouteDoc[]>([])
+  const [shuttles, setShuttles] = useState<ShuttleDoc[]>([])
   const [loading, setLoading] = useState(true)
-  const [userLocation, setUserLocation] = useState<any>(null)
-  const [destination, setDestination] = useState("")
-  const [showPayment, setShowPayment] = useState(false)
-  const [socket, setSocket] = useState<any>(null)
+  const [error, setError] = useState<string | null>(null)
+  const [routeFilter, setRouteFilter] = useState<string>("")
+  const [userPos, setUserPos] = useState<[number, number] | null>(null)
+  const [selectedShuttleId, setSelectedShuttleId] = useState<string | null>(
+    null
+  )
 
-  // 📍 User location
+  const loadData = useCallback(async () => {
+    setError(null)
+    try {
+      const [rRes, sRes] = await Promise.all([
+        api.get<RouteDoc[]>("/routes"),
+        api.get<ShuttleDoc[]>("/shuttles"),
+      ])
+      setRoutes(rRes.data)
+      setShuttles(sRes.data)
+    } catch (e) {
+      const msg = isAxiosError(e)
+        ? e.response?.data?.message ?? e.message
+        : "Failed to load data"
+      setError(String(msg))
+    } finally {
+      setLoading(false)
+    }
+  }, [])
+
+  useEffect(() => {
+    loadData()
+  }, [loadData])
+
   useEffect(() => {
     navigator.geolocation.getCurrentPosition(
       (pos) => {
-        setUserLocation({
-          lat: pos.coords.latitude,
-          lng: pos.coords.longitude,
-        })
+        setUserPos([pos.coords.latitude, pos.coords.longitude])
       },
       () => {
-        setUserLocation({ lat: 12.9716, lng: 79.1588 })
-      }
+        setUserPos([VIT_CAMPUS_CENTER[0], VIT_CAMPUS_CENTER[1]])
+      },
+      { enableHighAccuracy: true, timeout: 12000 }
     )
   }, [])
 
-  // 🚐 Fetch shuttles
   useEffect(() => {
-    fetch("http://localhost:5001/api/shuttles")
-      .then(res => res.json())
-      .then(data => {
-        setShuttles(data)
-        setLoading(false)
-      })
-  }, [])
-
-  // 🔌 Socket connection
-  useEffect(() => {
-    const newSocket = io("http://localhost:5001")
-
-    newSocket.on("connect", () => {
-      console.log("✅ Connected:", newSocket.id)
-    })
-
-    setSocket(newSocket)
-
-    return () => newSocket.disconnect()
-  }, [])
-
-  // 📡 Live updates
-  useEffect(() => {
-    if (!socket) return
-
-    socket.on("location-updated", (data: any) => {
-      console.log("📡 Live:", data)
-
-      setShuttles((prev: any[]) =>
+    const onLocation = (data: LocationUpdatedPayload) => {
+      setShuttles((prev) =>
         prev.map((s) =>
-          s._id === data.shuttle_id
+          String(s._id) === String(data.shuttle_id)
             ? {
                 ...s,
-                current_location: {
-                  lat: data.lat,
-                  lng: data.lng,
-                },
+                current_location: { lat: data.lat, lng: data.lng },
               }
             : s
         )
       )
-    })
+    }
 
-    return () => socket.off("location-updated")
+    socket.on("location-updated", onLocation)
+    return () => {
+      socket.off("location-updated", onLocation)
+    }
   }, [socket])
 
-  // 📏 Distance
-  const getDistance = (lat1: number, lon1: number, lat2: number, lon2: number) => {
-    const R = 6371
-    const dLat = (lat2 - lat1) * (Math.PI / 180)
-    const dLon = (lon2 - lon1) * (Math.PI / 180)
-
-    const a =
-      Math.sin(dLat / 2) ** 2 +
-      Math.cos(lat1 * (Math.PI / 180)) *
-        Math.cos(lat2 * (Math.PI / 180)) *
-        Math.sin(dLon / 2) ** 2
-
-    return R * 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a))
-  }
-
-  const getETA = (distance: number) => Math.round((distance / 25) * 60)
-
-  // 🎯 Filter
   const filteredShuttles = useMemo(() => {
+    if (!routeFilter) return shuttles
     return shuttles.filter((s) => {
-      if (!destination) return true
-      const routeName = s.route_id?.route_name || ""
-
-      if (destination === "Mens Hostel") {
-        return routeName.includes("Mens Hostel")
-      }
-
-      if (destination === "Academic Blocks") {
-        return routeName.includes("TT") || routeName.includes("SJT")
-      }
-
-      return true
+      if (!isRoutePopulated(s.route_id)) return false
+      return String(s.route_id._id) === routeFilter
     })
-  }, [shuttles, destination])
+  }, [shuttles, routeFilter])
 
-  // ⭐ Nearest shuttle
-  const nearestShuttle = useMemo(() => {
-    if (!userLocation || filteredShuttles.length === 0) return null
-
-    let nearest = filteredShuttles[0]
-    let minDistance = getDistance(
-      userLocation.lat,
-      userLocation.lng,
-      nearest.current_location.lat,
-      nearest.current_location.lng
+  const nearest = useMemo(() => {
+    if (!userPos || filteredShuttles.length === 0) return null
+    let best = filteredShuttles[0]
+    let bestD = distanceKm(
+      userPos[0],
+      userPos[1],
+      best.current_location.lat,
+      best.current_location.lng
     )
-
-    filteredShuttles.forEach((s) => {
-      const d = getDistance(
-        userLocation.lat,
-        userLocation.lng,
+    for (let i = 1; i < filteredShuttles.length; i++) {
+      const s = filteredShuttles[i]
+      const d = distanceKm(
+        userPos[0],
+        userPos[1],
         s.current_location.lat,
         s.current_location.lng
       )
-
-      if (d < minDistance) {
-        minDistance = d
-        nearest = s
+      if (d < bestD) {
+        best = s
+        bestD = d
       }
-    })
-
-    return nearest
-  }, [filteredShuttles, userLocation])
-
-  // 💳 Payment popup
-  useEffect(() => {
-    if (!nearestShuttle || !userLocation) return
-
-    const distance = getDistance(
-      userLocation.lat,
-      userLocation.lng,
-      nearestShuttle.current_location.lat,
-      nearestShuttle.current_location.lng
-    )
-
-    if (getETA(distance) <= 1) {
-      setShowPayment(true)
     }
-  }, [nearestShuttle, userLocation])
+    return best
+  }, [filteredShuttles, userPos])
+
+  const goToShuttle = (id: string) => {
+    navigate(`/shuttle/${id}`)
+  }
 
   return (
-    <div style={{ height: "100vh", display: "flex", flexDirection: "column" }}>
-      
-      {/* TOP BAR */}
-      <div style={{
-        padding: "15px",
-        background: "#e2e8f0",
-        display: "flex",
-        justifyContent: "space-between",
-      }}>
-        <h3>Select Destination</h3>
-
-        <select value={destination} onChange={(e) => setDestination(e.target.value)}>
-          <option value="">-- Choose Destination --</option>
-          <option value="Mens Hostel">Men's Hostel</option>
-          <option value="Academic Blocks">Academic Blocks</option>
-        </select>
-      </div>
-
-      <div style={{ display: "flex", flex: 1 }}>
-        
-        {/* MAP */}
-        <div style={{ flex: 2 }}>
-          <MapContainer center={[12.9716, 79.1588]} zoom={16} style={{ height: "100%" }}>
-            <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-
-            {filteredShuttles.map((s, i) => (
-              <Marker key={i} position={[s.current_location.lat, s.current_location.lng]}>
-                <Popup>
-                  <b>{s.shuttle_number}</b>
-                  <br />
-                  {s.route_id?.route_name || "Route info"}
-                </Popup>
-              </Marker>
-            ))}
-          </MapContainer>
+    <div className="flex h-full min-h-0 flex-1 flex-col bg-slate-100">
+      <header className="flex flex-shrink-0 flex-col gap-3 border-b border-slate-200 bg-white px-4 py-3 shadow-sm md:flex-row md:items-center md:justify-between">
+        <div>
+          <h1 className="text-lg font-semibold text-slate-900">
+            Live shuttle map
+          </h1>
+          <p className="text-sm text-slate-500">
+            Tap a shuttle to open its route and book a destination (₹20).
+          </p>
         </div>
 
-        {/* RIGHT PANEL (YOUR ORIGINAL STYLE) */}
-        <div style={{
-          flex: 1,
-          padding: "20px",
-          background: "#f1f5f9",
-          overflowY: "auto",
-        }}>
-          <h2>Available Shuttles</h2>
+        <div className="flex flex-wrap items-center gap-3">
+          <div className="flex items-center gap-2 text-sm">
+            <span
+              className={`inline-block h-2.5 w-2.5 rounded-full ${
+                connected ? "bg-emerald-500" : "bg-amber-500"
+              }`}
+              title={connected ? "Socket connected" : "Reconnecting…"}
+            />
+            <span className="text-slate-600">
+              {connected ? "Live" : "Connecting…"}
+            </span>
+          </div>
 
-          {loading || !userLocation ? (
-            <p>Loading...</p>
+          <label className="flex items-center gap-2 text-sm text-slate-600">
+            <span className="whitespace-nowrap">Route</span>
+            <select
+              className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-slate-900 shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+              value={routeFilter}
+              onChange={(e) => setRouteFilter(e.target.value)}
+            >
+              <option value="">All routes</option>
+              {routes.map((r) => (
+                <option key={r._id} value={r._id}>
+                  {r.route_name}
+                </option>
+              ))}
+            </select>
+          </label>
+
+          <button
+            type="button"
+            onClick={() => loadData()}
+            className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm font-medium text-slate-800 shadow-sm hover:bg-slate-50"
+          >
+            Refresh
+          </button>
+        </div>
+      </header>
+
+      {error && (
+        <div className="mx-4 mt-3 rounded-lg border border-red-200 bg-red-50 px-4 py-2 text-sm text-red-800">
+          {error}
+        </div>
+      )}
+
+      <div className="flex min-h-0 flex-1 flex-col lg:flex-row">
+        <section className="relative min-h-[320px] flex-1 lg:min-h-0">
+          {loading ? (
+            <div className="flex h-full items-center justify-center bg-slate-200/60">
+              <div className="h-10 w-10 animate-spin rounded-full border-2 border-teal-700 border-t-transparent" />
+            </div>
           ) : (
-            filteredShuttles.map((s, index) => {
-              const distance = getDistance(
-                userLocation.lat,
-                userLocation.lng,
-                s.current_location.lat,
-                s.current_location.lng
-              )
+            <ShuttleMap
+              shuttles={filteredShuttles}
+              routes={routes}
+              userPosition={userPos}
+              selectedShuttleId={selectedShuttleId}
+              onSelectShuttle={setSelectedShuttleId}
+              onOpenShuttle={goToShuttle}
+            />
+          )}
+        </section>
 
-              const eta = getETA(distance)
-              const isNearest =
-                nearestShuttle?._id === s._id
+        <aside className="flex w-full flex-col border-t border-slate-200 bg-white lg:w-[400px] lg:border-l lg:border-t-0">
+          <div className="border-b border-slate-100 px-4 py-3">
+            <h2 className="font-semibold text-slate-900">Shuttles</h2>
+            <p className="text-xs text-slate-500">
+              Open a shuttle to see stops, pick a destination, and pay ₹20.
+            </p>
+          </div>
+
+          <div className="min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+            {!userPos && !loading && (
+              <p className="text-sm text-slate-500">Locating you…</p>
+            )}
+
+            {filteredShuttles.map((s) => {
+              const isSel = selectedShuttleId === s._id
+              const isNear = nearest?._id === s._id
+              const seatWord = shuttleSeatLabel(s)
+              const isFull = seatWord === "Full"
+              const shortId = s._id.slice(-6).toUpperCase()
+              let dist = 0
+              let eta = 0
+              if (userPos) {
+                dist = distanceKm(
+                  userPos[0],
+                  userPos[1],
+                  s.current_location.lat,
+                  s.current_location.lng
+                )
+                eta = etaMinutes(dist)
+              }
 
               return (
-                <div
-                  key={index}
-                  style={{
-                    background: isNearest ? "#dcfce7" : "white",
-                    border: isNearest ? "2px solid green" : "none",
-                    padding: "15px",
-                    marginBottom: "15px",
-                    borderRadius: "12px",
-                    boxShadow: "0 8px 20px rgba(0,0,0,0.08)",
-                  }}
+                <article
+                  key={s._id}
+                  className={`rounded-xl border p-4 shadow-sm transition ${
+                    isSel
+                      ? "border-teal-600 ring-2 ring-teal-600/20"
+                      : "border-slate-200"
+                  } ${
+                    isNear && !isFull
+                      ? "bg-emerald-50/80"
+                      : isNear && isFull
+                        ? "bg-red-50/80"
+                        : "bg-slate-50"
+                  }`}
                 >
-                  <h3>
-                    {s.shuttle_number} {isNearest && "⭐"}
-                  </h3>
+                  <div className="flex items-start justify-between gap-2">
+                    <div>
+                      <h3 className="font-semibold text-slate-900">
+                        {s.shuttle_number}
+                        <span className="ml-2 text-xs font-normal text-slate-500">
+                          …{shortId}
+                        </span>
+                        {isNear && (
+                          <span
+                            className={`ml-2 text-xs font-normal ${
+                              isFull ? "text-red-700" : "text-emerald-700"
+                            }`}
+                          >
+                            Nearest
+                          </span>
+                        )}
+                      </h3>
+                      <p className="text-sm text-slate-600">
+                        {isRoutePopulated(s.route_id)
+                          ? s.route_id.route_name
+                          : "Route"}
+                      </p>
+                    </div>
+                    <div className="flex flex-shrink-0 flex-col items-end gap-1">
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          s.status === "active"
+                            ? "bg-slate-100 text-slate-800"
+                            : "bg-slate-200 text-slate-600"
+                        }`}
+                      >
+                        {s.status}
+                      </span>
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-xs font-medium ${
+                          isFull
+                            ? "bg-red-100 text-red-800"
+                            : "bg-emerald-100 text-emerald-800"
+                        }`}
+                      >
+                        {seatWord}
+                      </span>
+                    </div>
+                  </div>
 
-                  <p>{s.route_id?.route_name || "Route info"}</p>
-                  <p>📍 {distance.toFixed(2)} km away</p>
-                  <p>⏱ {eta} mins away</p>
-                </div>
+                  <div className="mt-3 grid grid-cols-2 gap-2 text-sm">
+                    <div className="rounded-lg bg-white/80 px-2 py-1.5">
+                      <p className="text-xs text-slate-500">Seats (driver)</p>
+                      <p
+                        className={`font-medium ${
+                          isFull ? "text-red-700" : "text-slate-900"
+                        }`}
+                      >
+                        {seatWord}
+                      </p>
+                    </div>
+                    <div className="rounded-lg bg-white/80 px-2 py-1.5">
+                      <p className="text-xs text-slate-500">ETA to shuttle</p>
+                      <p className="font-medium text-slate-900">
+                        {userPos ? `~${eta} min` : "—"}{" "}
+                        <span className="text-slate-500">
+                          ({userPos ? `${dist.toFixed(2)} km` : "—"})
+                        </span>
+                      </p>
+                    </div>
+                  </div>
+
+                  <div className="mt-3 flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      onClick={() => setSelectedShuttleId(s._id)}
+                      className="rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm font-medium text-slate-800 hover:bg-slate-50"
+                    >
+                      Focus on map
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => goToShuttle(s._id)}
+                      className={
+                        isFull
+                          ? "rounded-lg border-2 border-red-600 bg-red-50 px-3 py-1.5 text-sm font-medium text-red-800 hover:bg-red-100"
+                          : "rounded-lg bg-teal-700 px-3 py-1.5 text-sm font-medium text-white hover:bg-teal-800"
+                      }
+                    >
+                      Route & book
+                    </button>
+                  </div>
+                </article>
               )
-            })
-          )}
-        </div>
+            })}
+
+            {!loading && filteredShuttles.length === 0 && (
+              <p className="text-sm text-slate-500">
+                No shuttles match this filter.
+              </p>
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   )
 }
-
-export default Dashboard

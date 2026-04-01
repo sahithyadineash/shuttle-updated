@@ -1,11 +1,35 @@
 import { useState } from "react"
-import { useNavigate } from "react-router-dom"
+import { Navigate, useNavigate } from "react-router-dom"
+import { useAuth } from "../hooks/useAuth"
+import { isAxiosError } from "axios"
+function formatAuthError(err: unknown): string {
+  if (!isAxiosError(err)) {
+    return err instanceof Error ? err.message : "Something went wrong"
+  }
+  const code = err.code
+  if (
+    code === "ERR_NETWORK" ||
+    err.message === "Network Error" ||
+    (!err.response && err.request)
+  ) {
+    const hint =
+      import.meta.env.VITE_API_URL?.trim() &&
+      import.meta.env.VITE_API_URL.includes("localhost")
+        ? " If the backend is running, try VITE_API_URL=http://127.0.0.1:5001 or remove it to use the Vite proxy."
+        : " Start the API on port 5001 (backend folder) and open the app from the Vite URL (usually http://localhost:5173)."
+    return `Cannot reach the server (network error).${hint}`
+  }
+  const data = err.response?.data as { message?: string; error?: string }
+  return String(data?.message ?? data?.error ?? err.message)
+}
 
-function Login() {
+export default function Login() {
   const navigate = useNavigate()
+  const { user, token, login, register } = useAuth()
 
-  const [isRegister, setIsRegister] = useState(true)
-
+  const [isRegister, setIsRegister] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
+  const [error, setError] = useState<string | null>(null)
   const [form, setForm] = useState({
     name: "",
     email: "",
@@ -14,182 +38,191 @@ function Login() {
     role: "student",
   })
 
-  const handleChange = (e: any) => {
+  if (token && user) {
+    return (
+      <Navigate
+        to={user.role === "driver" ? "/driver" : "/dashboard"}
+        replace
+      />
+    )
+  }
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     setForm({ ...form, [e.target.name]: e.target.value })
   }
 
-  const handleSubmit = async () => {
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setError(null)
+    setSubmitting(true)
     try {
-      const url = isRegister
-        ? "http://localhost:5001/api/auth/register"
-        : "http://localhost:5001/api/auth/login"
-
-      const res = await fetch(url, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(form),
-      })
-
-      const data = await res.json()
-
-      if (res.ok) {
-        if (!isRegister) {
-          localStorage.setItem("token", data.token)
-          localStorage.setItem("user", JSON.stringify(data.user)) // ADD THIS
-          navigate("/dashboard")
-        } else {
-          alert("Registered! Please login.")
-          setIsRegister(false)
-        }
+      if (isRegister) {
+        await register({
+          name: form.name,
+          email: form.email,
+          password: form.password,
+          role: form.role,
+          phone: form.phone,
+        })
+        setIsRegister(false)
+        setError(null)
       } else {
-        alert(data.message || "Error")
+        const loggedIn = await login(form.email, form.password)
+        navigate(loggedIn.role === "driver" ? "/driver" : "/dashboard", {
+          replace: true,
+        })
       }
     } catch (err) {
-      console.error(err)
+      setError(formatAuthError(err))
+    } finally {
+      setSubmitting(false)
     }
   }
 
   return (
-    <div style={styles.container}>
-      <div style={styles.card}>
-        <div style={styles.logo}>🚐</div>
+    <div className="flex min-h-screen items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 px-4">
+      <div className="w-full max-w-md rounded-2xl bg-white p-8 shadow-xl ring-1 ring-slate-200/80">
+        <div className="mb-6 text-center">
+          <div className="text-4xl" aria-hidden>
+            🚐
+          </div>
+          <h1 className="mt-2 text-2xl font-semibold text-slate-900">
+            {isRegister ? "Create account" : "VIT Shuttle Tracker"}
+          </h1>
+          <p className="mt-1 text-sm text-slate-500">
+            {isRegister
+              ? "Join with your campus email"
+              : "Sign in to track shuttles in real time"}
+          </p>
+        </div>
 
-        <h2>{isRegister ? "Create Account" : "Login"}</h2>
-        <p style={{ color: "#666" }}>
-          {isRegister ? "Join ShuttleTrack today" : "Welcome back"}
-        </p>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          {error && (
+            <div className="rounded-lg border border-red-200 bg-red-50 px-3 py-2 text-sm text-red-800">
+              {error}
+            </div>
+          )}
 
-        {isRegister && (
-          <input
-            name="name"
-            placeholder="Full Name"
-            style={styles.input}
-            onChange={handleChange}
-          />
-        )}
+          {isRegister && (
+            <div>
+              <label className="mb-1 block text-xs font-medium text-slate-600">
+                Full name
+              </label>
+              <input
+                name="name"
+                required
+                autoComplete="name"
+                className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+                placeholder="Your name"
+                value={form.name}
+                onChange={handleChange}
+              />
+            </div>
+          )}
 
-        <input
-          name="email"
-          placeholder="Email"
-          style={styles.input}
-          onChange={handleChange}
-        />
-
-        <input
-          type="password"
-          name="password"
-          placeholder="Password"
-          style={styles.input}
-          onChange={handleChange}
-        />
-
-        {isRegister && (
-          <>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              Email
+            </label>
             <input
-              name="phone"
-              placeholder="Phone Number"
-              style={styles.input}
+              name="email"
+              type="email"
+              required
+              autoComplete="email"
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+              placeholder="you@example.com"
+              value={form.email}
               onChange={handleChange}
             />
+          </div>
 
-            <div style={{ display: "flex", gap: "10px" }}>
-              <button
-                style={
-                  form.role === "student"
-                    ? styles.roleActive
-                    : styles.roleBtn
-                }
-                onClick={() => setForm({ ...form, role: "student" })}
-              >
-                Student
-              </button>
+          <div>
+            <label className="mb-1 block text-xs font-medium text-slate-600">
+              Password
+            </label>
+            <input
+              name="password"
+              type="password"
+              required
+              autoComplete={isRegister ? "new-password" : "current-password"}
+              className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+              placeholder="••••••••"
+              value={form.password}
+              onChange={handleChange}
+            />
+          </div>
 
-              <button
-                style={
-                  form.role === "driver"
-                    ? styles.roleActive
-                    : styles.roleBtn
-                }
-                onClick={() => setForm({ ...form, role: "driver" })}
-              >
-                Driver
-              </button>
-            </div>
-          </>
-        )}
+          {isRegister && (
+            <>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-600">
+                  Phone
+                </label>
+                <input
+                  name="phone"
+                  type="tel"
+                  inputMode="tel"
+                  className="w-full rounded-lg border border-slate-300 px-3 py-2 text-slate-900 shadow-sm focus:border-teal-600 focus:outline-none focus:ring-2 focus:ring-teal-600/20"
+                  placeholder="+91 …"
+                  value={form.phone}
+                  onChange={handleChange}
+                />
+              </div>
 
-        <button style={styles.mainBtn} onClick={handleSubmit}>
-          {isRegister ? "Create Account" : "Login"}
-        </button>
+              <div className="flex gap-2">
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, role: "student" })}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    form.role === "student"
+                      ? "border-teal-700 bg-teal-700 text-white"
+                      : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                  }`}
+                >
+                  Student
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setForm({ ...form, role: "driver" })}
+                  className={`flex-1 rounded-lg border px-3 py-2 text-sm font-medium transition ${
+                    form.role === "driver"
+                      ? "border-teal-700 bg-teal-700 text-white"
+                      : "border-slate-300 bg-white text-slate-800 hover:bg-slate-50"
+                  }`}
+                >
+                  Driver
+                </button>
+              </div>
+            </>
+          )}
 
-        <p style={{ marginTop: "10px" }}>
-          {isRegister ? "Already have an account?" : "Don't have an account?"}{" "}
-          <span
-            style={{ color: "#0f766e", cursor: "pointer" }}
-            onClick={() => setIsRegister(!isRegister)}
+          <button
+            type="submit"
+            disabled={submitting}
+            className="w-full rounded-lg bg-teal-700 py-2.5 text-sm font-semibold text-white shadow hover:bg-teal-800 disabled:cursor-not-allowed disabled:opacity-60"
           >
-            {isRegister ? "Sign In" : "Register"}
-          </span>
+            {submitting
+              ? "Please wait…"
+              : isRegister
+                ? "Create account"
+                : "Sign in"}
+          </button>
+        </form>
+
+        <p className="mt-6 text-center text-sm text-slate-600">
+          {isRegister ? "Already have an account?" : "New here?"}{" "}
+          <button
+            type="button"
+            className="font-semibold text-teal-700 hover:underline"
+            onClick={() => {
+              setError(null)
+              setIsRegister(!isRegister)
+            }}
+          >
+            {isRegister ? "Sign in" : "Register"}
+          </button>
         </p>
       </div>
     </div>
   )
-}
-
-export default Login
-
-// 🎨 STYLES
-const styles: any = {
-  container: {
-    height: "100vh",
-    display: "flex",
-    justifyContent: "center",
-    alignItems: "center",
-    background: "#f1f5f9",
-  },
-  card: {
-    width: "350px",
-    padding: "25px",
-    borderRadius: "10px",
-    background: "white",
-    boxShadow: "0 10px 30px rgba(0,0,0,0.1)",
-    textAlign: "center",
-  },
-  logo: {
-    fontSize: "40px",
-    marginBottom: "10px",
-  },
-  input: {
-    width: "100%",
-    padding: "10px",
-    margin: "8px 0",
-    borderRadius: "6px",
-    border: "1px solid #ccc",
-  },
-  mainBtn: {
-    width: "100%",
-    padding: "12px",
-    marginTop: "10px",
-    background: "#0f766e",
-    color: "white",
-    border: "none",
-    borderRadius: "6px",
-    cursor: "pointer",
-  },
-  roleBtn: {
-    flex: 1,
-    padding: "10px",
-    border: "1px solid #ccc",
-    borderRadius: "6px",
-    background: "white",
-    cursor: "pointer",
-  },
-  roleActive: {
-    flex: 1,
-    padding: "10px",
-    borderRadius: "6px",
-    background: "#0f766e",
-    color: "white",
-    border: "none",
-  },
 }

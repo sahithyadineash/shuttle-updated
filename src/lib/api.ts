@@ -1,0 +1,16 @@
+import axios from "axios"
+import { getRestApiBase } from "../config/env"
+
+export const api = axios.create({
+  baseURL: getRestApiBase(),
+  headers: { "Content-Type": "application/json" },
+  timeout: 30_000,
+})
+
+export function setAuthToken(token: string | null) {
+  if (token) {
+    api.defaults.headers.common.Authorization = `Bearer ${token}`
+  } else {
+    delete api.defaults.headers.common.Authorization
+  }
+}

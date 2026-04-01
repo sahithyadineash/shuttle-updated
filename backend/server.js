@@ -20,6 +20,22 @@ const PORT = process.env.PORT || 5001;
 app.use(cors());
 app.use(express.json());
 
+// OSRM proxy (road geometry). Demo host — replace with your routing service in production.
+app.use('/api/routing', async (req, res) => {
+  const suffix = req.originalUrl.replace(/^\/api\/routing/, '') || '/';
+  if (!suffix.startsWith('/route/')) {
+    return res.status(400).json({ message: 'Only OSRM /route/* paths are allowed' });
+  }
+  const url = `https://router.project-osrm.org${suffix}`;
+  try {
+    const r = await fetch(url);
+    const data = await r.json();
+    res.status(r.status).json(data);
+  } catch (err) {
+    res.status(502).json({ message: err?.message || 'Routing proxy failed' });
+  }
+});
+
 // MongoDB Connection
 mongoose.connect(process.env.MONGO_URI || 'mongodb://localhost:27017/shuttle_tracking')
   .then(() => console.log('✅ MongoDB connected'))
@@ -36,6 +52,9 @@ const routeRoutes = require('./routes/route');
 app.use('/api/auth', authRoutes);
 app.use('/api/shuttles', shuttleRoutes);
 app.use('/api/routes', routeRoutes);
+
+const paymentRoutes = require('./routes/payment');
+app.use('/api/payments', paymentRoutes);
 
 // Test route
 app.get('/', (req, res) => {
@@ -72,10 +91,19 @@ io.on('connection', (socket) => {
   });
 });
 
+server.on('error', (err) => {
+  if (err.code === 'EADDRINUSE') {
+    console.error(`\n❌ Port ${PORT} is already in use.`);
+    console.error('   Another server is probably still running (e.g. a previous `npm start`).');
+    console.error(`   • macOS — see what is using it:  lsof -i :${PORT}`);
+    console.error('   • Stop it, or set a different port in backend/.env, e.g. PORT=5002\n');
+    process.exit(1);
+  }
+  throw err;
+});
+
 // Start server
 server.listen(PORT, () => {
   console.log(`🚀 Server running on http://localhost:${PORT}`);
   console.log(`🔌 Socket.io ready for real-time updates`);
 });
-const paymentRoutes = require('./routes/payment');
-app.use('/api/payments', paymentRoutes);
